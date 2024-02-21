@@ -41,8 +41,8 @@ DPDK_VERSION = $(shell apt-cache policy dpdk-dev | grep Installed: | sed 's/.*:/
 
 ifeq ($(DPDK_VERSION), none)
 # default version, target when cannot found dpdk-dev binary package
-DPDK_VERSION=17
-RTE_TARGET ?= x86_64-native-linuxapp-gcc
+DPDK_VERSION=22
+RTE_TARGET ?= x86_64-native-linux-gcc
 else
 # found dpdk-dev binary package, use RTE_SDK, RTE_TARGET location from dpdk-dev
 RTE_SDK=/usr/share/dpdk
@@ -64,8 +64,8 @@ PKGCONF ?= pkg-config
 PC_FILE := $(shell $(PKGCONF) --path libdpdk 2>/dev/null)
 CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
 CFLAGS += "-DDPDK_VERSION=$(DPDK_VERSION)"
-LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk)
-LDFLAGS_STATIC = -Wl,-Bstatic $(shell $(PKGCONF) --static --libs libdpdk)
+LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk) -lm
+LDFLAGS_STATIC = -Wl,-Bstatic $(shell $(PKGCONF) --static --libs libdpdk) -lm
 
 build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)

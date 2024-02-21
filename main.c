@@ -54,6 +54,7 @@
  * RTE_LIBRTE_RING_DEBUG generates statistics of ring buffers. However, SEGV is occurred. (v16.07）
  * #define RTE_LIBRTE_RING_DEBUG
  */
+#include <rte_config.h>
 #include <rte_common.h>
 #include <rte_log.h>
 #include <rte_malloc.h>
@@ -78,6 +79,7 @@
 #include <rte_ring.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
+#include <rte_mbuf_dyn.h>
 #include <rte_errno.h>
 #include <rte_timer.h>
 
@@ -92,6 +94,7 @@ static uint64_t normal_distribution(uint64_t mean, uint64_t stddev);
 #define RANDOM_MAX 1000000000
 
 static volatile bool force_quit;
+static int timestamp_field_offset;
 
 #define RTE_LOGTYPE_DEMU RTE_LOGTYPE_USER1
 
@@ -187,17 +190,10 @@ static uint64_t dup_rate = 0;
 
 static const struct rte_eth_conf port_conf = {
 	.rxmode = {
-		.split_hdr_size = 0,
-		#if DPDK_VERSION < 18
-		.header_split   = 0, /**< Header Split disabled */
-		.hw_ip_checksum = 0, /**< IP checksum offload disabled */
-		.hw_vlan_filter = 0, /**< VLAN filtering disabled */
-		.jumbo_frame    = 0, /**< Jumbo Frame Support disabled */
-		.hw_strip_crc   = 0, /**< CRC stripped by hardware */
-		#endif
+		.mq_mode = RTE_ETH_MQ_RX_RSS,
 	},
 	.txmode = {
-		.mq_mode = ETH_MQ_TX_NONE,
+		.mq_mode = RTE_ETH_MQ_TX_NONE,
 	},
 };
 
@@ -392,7 +388,8 @@ demu_rx_loop(unsigned portid)
 
 			rx2w_buffer[i - nb_loss + nb_dup] = pkts_burst[i];
 			rte_prefetch0(rte_pktmbuf_mtod(rx2w_buffer[i - nb_loss + nb_dup], void *));
-			rx2w_buffer[i - nb_loss + nb_dup]->udata64 = rte_rdtsc();
+
+			*RTE_MBUF_DYNFIELD(rx2w_buffer[i - nb_loss + nb_dup], timestamp_field_offset, uint64_t*) = rte_rdtsc();
 
 			/* FIXME: we do not check the buffer overrun of rx2w_buffer. */
 			if (portid == 0 && dup_event()) {
@@ -459,7 +456,7 @@ worker_thread(unsigned portid)
 			if (portid == 0) {
 
 				rte_prefetch0(rte_pktmbuf_mtod(burst_buffer[i], void *));
-				diff_tsc = rte_rdtsc() - burst_buffer[i]->udata64;
+				diff_tsc = rte_rdtsc() - (*RTE_MBUF_DYNFIELD(burst_buffer[i], timestamp_field_offset, uint64_t*));
 				if (diff_tsc < delayed_time)
 					continue;
 
@@ -758,7 +755,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 					RTE_LOG(INFO, DEMU, "  Port %d Link Up - speed %u "
 						"Mbps - %s\n", (uint8_t)portid,
 						(unsigned)link.link_speed,
-						(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
+						(link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
 						("full-duplex") : ("half-duplex\n"));
 				else
 					RTE_LOG(INFO, DEMU, "  Port %d Link Down\n",
@@ -766,7 +763,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
-			if (link.link_status == ETH_LINK_DOWN) {
+			if (link.link_status == RTE_ETH_LINK_DOWN) {
 				all_ports_up = 0;
 				break;
 			}
@@ -826,6 +823,12 @@ main(int argc, char **argv)
 
 	if (demu_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool: %s\n", rte_strerror(rte_errno));
+
+	/* initialized timestamp dynamic field */
+	timestamp_field_offset = rte_mbuf_dynfield_lookup(RTE_MBUF_DYNFIELD_TIMESTAMP_NAME, NULL);
+	if(timestamp_field_offset<0){
+		rte_mbuf_dyn_rx_timestamp_register(&timestamp_field_offset, NULL);
+	}
 
 	#if DPDK_VERSION > 17
 		nb_ports = rte_eth_dev_count_avail();
@@ -918,8 +921,8 @@ main(int argc, char **argv)
 
 	ret = 0;
 	/* launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(demu_launch_one_lcore, NULL, CALL_MASTER);
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	rte_eal_mp_remote_launch(demu_launch_one_lcore, NULL, CALL_MAIN);
+	RTE_LCORE_FOREACH_WORKER(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0) {
 			ret = -1;
 			break;
