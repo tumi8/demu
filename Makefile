@@ -64,8 +64,8 @@ PKGCONF ?= pkg-config
 PC_FILE := $(shell $(PKGCONF) --path libdpdk 2>/dev/null)
 CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
 CFLAGS += "-DDPDK_VERSION=$(DPDK_VERSION)"
-LDFLAGS_SHARED = $(shell $(PKGCONF) --libs libdpdk) -lm
-LDFLAGS_STATIC = -Wl,-Bstatic $(shell $(PKGCONF) --static --libs libdpdk) -lm
+LDFLAGS_SHARED = $(shell $(PKGCONF) --keep-system-libs --libs libdpdk) -lm
+LDFLAGS_STATIC = -Wl,-Bstatic $(shell $(PKGCONF) --keep-system-libs --static --libs libdpdk) -lm -lsystemd -Wl,--allow-multiple-definition
 
 build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)
