@@ -6,7 +6,7 @@ if(PKG_CONFIG_FOUND)
   pkg_check_modules(dpdk IMPORTED_TARGET libdpdk)
 endif()
 
-SET(CMAKE_CXX_FLAGS "-Wall -Wextra -Wno-unused-parameter -g -O3 -march=native -DDPDK_VERSION=22")
+SET(CMAKE_CXX_FLAGS "-Wall -Wextra -Wno-unused-parameter -O3 -march=native -DDPDK_VERSION=22")
 SET(CMAKE_C_FLAGS "-Wall -Wextra -Wno-unused-parameter -O3 -march=native -DDPDK_VERSION=22")
 
 INCLUDE_DIRECTORIES(
