@@ -19,3 +19,6 @@ LINK_DIRECTORIES(
 
 ADD_EXECUTABLE(demu main.c)
 TARGET_LINK_LIBRARIES(demu ${ALL_LIBS} -Wl,--start-group ${dpdk_STATIC_LINK_LIBRARIES} ${dpdk_STATIC_LDFLAGS} ${dpdk_STATIC_LDFLAGS_OTHER} numa -Wl,--end-group pthread dl rt)
+
+ADD_EXECUTABLE(demuHairpin main_hairpin.c)
+TARGET_LINK_LIBRARIES(demuHairpin ${ALL_LIBS} -Wl,--start-group ${dpdk_STATIC_LINK_LIBRARIES} ${dpdk_STATIC_LDFLAGS} ${dpdk_STATIC_LDFLAGS_OTHER} numa -Wl,--end-group pthread dl rt)

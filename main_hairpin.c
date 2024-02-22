@@ -133,11 +133,8 @@ struct demu_port_statistics port_statistics[RTE_MAX_ETHPORTS];
  * Currently, each of two threads is running for rx, tx, worker threads.
  */
 #define RX_THREAD_CORE 2
-#define RX_THREAD_CORE2 3
-#define TX_THREAD_CORE 4
-#define TX_THREAD_CORE2 5
-#define WORKER_THREAD_CORE 6
-#define WORKER_THREAD_CORE2 7
+#define TX_THREAD_CORE 3
+#define WORKER_THREAD_CORE 4
 #define TIMER_THREAD_CORE 1
 
 /*
@@ -165,9 +162,7 @@ struct demu_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 #define DEMU_SEND_BUFFER_SIZE_PKTS 512
 
 struct rte_ring *rx_to_workers;
-struct rte_ring *rx_to_workers2;
 struct rte_ring *workers_to_tx;
-struct rte_ring *workers_to_tx2;
 
 static uint64_t delayed_time_in_us = 0; 
 static uint64_t delayed_jitter = 0; 
@@ -328,10 +323,7 @@ demu_tx_loop(unsigned portid)
 	RTE_LOG(INFO, DEMU, "Entering main tx loop on lcore %u portid %u\n", lcore_id, portid);
 
 	while (!force_quit) {
-		if (portid == 0)
-			cring = &workers_to_tx;
-		else
-			cring = &workers_to_tx2;
+		cring = &workers_to_tx;
 		
 		numdeq = rte_ring_sc_dequeue_burst(*cring,
 				(void *)send_buf, PKT_BURST_TX, NULL);
@@ -409,12 +401,8 @@ demu_rx_loop(unsigned portid)
 
 		}
 
-		if (portid == 0)
-			numenq = rte_ring_sp_enqueue_burst(rx_to_workers,
-					(void *)rx2w_buffer, nb_rx - nb_loss + nb_dup, NULL);
-		else
-			numenq = rte_ring_sp_enqueue_burst(rx_to_workers2,
-					(void *)rx2w_buffer, nb_rx - nb_loss + nb_dup, NULL);
+		numenq = rte_ring_sp_enqueue_burst(rx_to_workers,
+				(void *)rx2w_buffer, nb_rx - nb_loss + nb_dup, NULL);
 
 
 		if (unlikely(numenq < (unsigned)(nb_rx - nb_loss + nb_dup))) {
@@ -439,45 +427,30 @@ worker_thread(unsigned portid)
 	RTE_LOG(INFO, DEMU, "Entering main worker on lcore %u\n", lcore_id);
 
 	while (!force_quit) {
-		if (portid == 0)
-			burst_size = rte_ring_sc_dequeue_burst(rx_to_workers,
-					(void *)burst_buffer, PKT_BURST_WORKER, NULL);
-		else
-			burst_size = rte_ring_sc_dequeue_burst(rx_to_workers2,
-					(void *)burst_buffer, PKT_BURST_WORKER, NULL);
+		burst_size = rte_ring_sc_dequeue_burst(rx_to_workers,
+				(void *)burst_buffer, PKT_BURST_WORKER, NULL);
 		if (unlikely(burst_size == 0))
 			continue;
 
 		i = 0;
 		while (i != burst_size) {
-			/* Add a given delay when a packet comes from the port 0.
-			 * FIXME: fix this implementation.
-			 */
-			if (portid == 0) {
+			rte_prefetch0(rte_pktmbuf_mtod(burst_buffer[i], void *));
+			diff_tsc = rte_rdtsc() - (*RTE_MBUF_DYNFIELD(burst_buffer[i], timestamp_field_offset, uint64_t*));
+			if (diff_tsc < delayed_time)
+				continue;
 
-				rte_prefetch0(rte_pktmbuf_mtod(burst_buffer[i], void *));
-				diff_tsc = rte_rdtsc() - (*RTE_MBUF_DYNFIELD(burst_buffer[i], timestamp_field_offset, uint64_t*));
-				if (diff_tsc < delayed_time)
+			if (limit_speed) {
+				uint16_t pkt_size_bit = burst_buffer[i]->pkt_len * 8;
+
+				if (amount_token >= pkt_size_bit)
+					amount_token -= pkt_size_bit;
+				else
 					continue;
-
-				if (limit_speed) {
-					uint16_t pkt_size_bit = burst_buffer[i]->pkt_len * 8;
-
-					if (amount_token >= pkt_size_bit)
-						amount_token -= pkt_size_bit;
-					else
-						continue;
-				}
-				do {
-					status = rte_ring_sp_enqueue(workers_to_tx2, burst_buffer[i]);
-				} while (status == -ENOBUFS);
-				i++;
-			} else {
-				do {
-					status = rte_ring_sp_enqueue(workers_to_tx, burst_buffer[i]);
-				} while (status == -ENOBUFS);
-				i++; 
 			}
+			do {
+				status = rte_ring_sp_enqueue(workers_to_tx, burst_buffer[i]);
+			} while (status == -ENOBUFS);
+			i++;
 		}
 	}
 }
@@ -489,21 +462,12 @@ demu_launch_one_lcore(__attribute__((unused)) void *dummy)
 	lcore_id = rte_lcore_id();
 
 	if (lcore_id == TX_THREAD_CORE) 
-		demu_tx_loop(1);
-
-	else if (lcore_id == TX_THREAD_CORE2)
 		demu_tx_loop(0);
 
 	else if (lcore_id == WORKER_THREAD_CORE)
 		worker_thread(0);
 
-	else if (lcore_id == WORKER_THREAD_CORE2)
-		worker_thread(1);	
-
 	else if (lcore_id == RX_THREAD_CORE)
-		demu_rx_loop(1);
-
-	else if (lcore_id == RX_THREAD_CORE2)
 		demu_rx_loop(0);
 
 	else if ((limit_speed || delayed_jitter) && lcore_id == TIMER_THREAD_CORE)
@@ -907,18 +871,6 @@ main(int argc, char **argv)
 			rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
 	if (workers_to_tx == NULL)
 		rte_exit(EXIT_FAILURE, "%s\n", rte_strerror(rte_errno));
-
-	rx_to_workers2 = rte_ring_create("rx_to_workers2", DEMU_DELAYED_BUFFER_PKTS,
-			rte_socket_id(),   RING_F_SP_ENQ | RING_F_SC_DEQ);
-
-	if (rx_to_workers2 == NULL)
-		rte_exit(EXIT_FAILURE, "%s\n", rte_strerror(rte_errno));
-
-	workers_to_tx2 = rte_ring_create("workers_to_tx2", DEMU_SEND_BUFFER_SIZE_PKTS,
-			rte_socket_id(), RING_F_SP_ENQ | RING_F_SC_DEQ);
-	if (workers_to_tx2 == NULL)
-		rte_exit(EXIT_FAILURE, "%s\n", rte_strerror(rte_errno));
-
 
 
 	ret = 0;
