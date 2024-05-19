@@ -469,12 +469,12 @@ worker_thread(unsigned portid)
 						continue;
 				}
 				do {
-					status = rte_ring_sp_enqueue(workers_to_tx2, burst_buffer[i]);
+					status = rte_ring_sp_enqueue(workers_to_tx, burst_buffer[i]);
 				} while (status == -ENOBUFS);
 				i++;
 			} else {
 				do {
-					status = rte_ring_sp_enqueue(workers_to_tx, burst_buffer[i]);
+					status = rte_ring_sp_enqueue(workers_to_tx2, burst_buffer[i]);
 				} while (status == -ENOBUFS);
 				i++; 
 			}
