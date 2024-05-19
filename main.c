@@ -380,7 +380,7 @@ demu_rx_loop(unsigned portid)
 		for (i = 0; i < nb_rx; i++) {
 			struct rte_mbuf *clone;
 
-			if (portid == 0 && loss_event()) {
+			if (portid == 1 && loss_event()) {
 				port_statistics[portid].discarded++;
 				nb_loss++;
 				continue;
@@ -392,7 +392,7 @@ demu_rx_loop(unsigned portid)
 			*RTE_MBUF_DYNFIELD(rx2w_buffer[i - nb_loss + nb_dup], timestamp_field_offset, uint64_t*) = rte_rdtsc();
 
 			/* FIXME: we do not check the buffer overrun of rx2w_buffer. */
-			if (portid == 0 && dup_event()) {
+			if (portid == 1 && dup_event()) {
 				clone = rte_pktmbuf_clone(rx2w_buffer[i - nb_loss + nb_dup], demu_pktmbuf_pool);
 				if (clone == NULL)
 					RTE_LOG(ERR, DEMU, "cannot clone a packet\n");
