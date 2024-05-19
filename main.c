@@ -453,7 +453,7 @@ worker_thread(unsigned portid)
 			/* Add a given delay when a packet comes from the port 0.
 			 * FIXME: fix this implementation.
 			 */
-			if (portid == 0) {
+			if (portid == 1) {
 
 				rte_prefetch0(rte_pktmbuf_mtod(burst_buffer[i], void *));
 				diff_tsc = rte_rdtsc() - (*RTE_MBUF_DYNFIELD(burst_buffer[i], timestamp_field_offset, uint64_t*));
