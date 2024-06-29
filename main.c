@@ -383,7 +383,7 @@ demu_rx_loop(unsigned portid)
 			if (portid == 1 && loss_event()) {
 				port_statistics[portid].discarded++;
 				nb_loss++;
-				rte_pktmbuf_free(&pkts_burst[i]);
+				rte_pktmbuf_free(pkts_burst[i]);
 				continue;
 			}
 
