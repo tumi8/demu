@@ -410,6 +410,10 @@ demu_rx_loop(unsigned portid)
 
 		}
 
+		if(nb_rx - nb_loss + nb_dup <= 0){
+			continue;
+		}
+
 		if (portid == 0)
 			numenq = rte_ring_sp_enqueue_burst(rx_to_workers,
 					(void *)rx2w_buffer, nb_rx - nb_loss + nb_dup, NULL);
